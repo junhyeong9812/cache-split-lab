@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 실험 트래픽 — k6 가 때리는 유일한 경로. nginx 가 이 경로만 프록시한다.
@@ -22,8 +23,29 @@ class KeyController(
     private val props: AppProperties,
 ) {
 
+    companion object {
+        /**
+         * 지금 처리 중인 요청 수 — **정확한 동시성 측정치.**
+         * Thread.activeCount() 는 JVM 전체 스레드(GC·JIT·idle 풀 포함)라
+         * "스레드가 묶였나"를 판정할 수 없다. 이건 실제 in-flight 다.
+         * Phase 0 에서 CPU 가 묶는지 스레드가 묶는지 가르는 데 쓴다 (DECISIONS.md §17).
+         */
+        val inFlight = AtomicInteger(0)
+        val inFlightMax = AtomicInteger(0)
+    }
+
     @GetMapping("/key/{id}")
     fun getKey(@PathVariable id: String): KeyResponse {
+        val n = inFlight.incrementAndGet()
+        inFlightMax.updateAndGet { if (n > it) n else it }
+        try {
+            return handle(id)
+        } finally {
+            inFlight.decrementAndGet()
+        }
+    }
+
+    private fun handle(id: String): KeyResponse {
         cache.get(id)?.let {
             return KeyResponse(id = id, value = it, cached = true, nodeId = props.nodeId)
         }

@@ -107,6 +107,23 @@ def k6(keyspace, skew, rps, duration, seed=42, background=False):
     return sh(cmd, check=False)
 
 
+def prewarm(keyspace):
+    """모든 키를 정확히 한 번씩 훑는다 — 쿠폰 수집가 구간을 건너뛴다.
+
+    비율 ≤ 1 에서 arm A 는 축출을 안 하므로 히트율이 100% 에 **점근**하는데,
+    Zipf 꼬리 때문에 수렴이 극도로 느리다(실측: 40,000 요청에 10,000 키 중 6,638 개만).
+    수렴 전에 재면 A 가 과소평가되고 손실(A−B)도 과소평가된다 —
+    **우리 가설에 불리한 방향의 편향**이다.
+
+    정상상태를 바꾸는 게 아니라 거기 빨리 도달할 뿐이고, 세 arm 에 똑같이 적용된다.
+    """
+    t0 = time.time()
+    sh(f"ssh {APC} 'docker run --rm -v ~/{REMOTE}-k6:/s "
+       f"-e TARGET=http://{BPC_IP} -e KEYSPACE={keyspace} "
+       f"grafana/k6:latest run --quiet /s/prewarm.js'", check=False)
+    return round(time.time() - t0, 1)
+
+
 def totals(nodes):
     """전 노드의 히트/미스 합."""
     h = m = 0
@@ -162,6 +179,7 @@ def collect(arm, nodes):
         per.append({"port": p, "node_id": s["nodeId"], "hits": s["hits"], "misses": s["misses"],
                     "hit_rate": s["hitRate"], "cache_size": s["cacheSize"],
                     "capacity": s["capacity"], "threads_active": s["threadsActive"],
+                    "in_flight_max": s["inFlightMax"], "threads_max": s["threadsMax"],
                     "keys": set(k["keys"])})
     o = get_json(f"http://{BPC_IP}:9090/admin/stats")
 
@@ -199,6 +217,9 @@ def main():
     ap.add_argument("--rps", type=int, required=True)
     ap.add_argument("--duration", default="60s")
     ap.add_argument("--delay-ms", type=int, default=5)
+    ap.add_argument("--warmup-max", type=int, default=300)
+    # 히트율은 RPS 에 무관하므로(DECISIONS.md §15) 워밍업은 빠르게 돌려 시간을 아낀다.
+    ap.add_argument("--warmup-rps", type=int, default=3000)
     ap.add_argument("--out")
     a = ap.parse_args()
 
@@ -220,8 +241,16 @@ def main():
         compose(a.arm, a.keyspace, a.delay_ms, "up -d --build")
         rec["startup_seconds"] = round(wait_healthy(nodes), 1)
 
-        print("   워밍업 (plateau 탐지)…", flush=True)
-        rec["warmup"] = warmup_until_plateau(nodes, a.keyspace, a.skew, a.rps)
+        print("   프리웜 (전 키 1회 훑기 — 쿠폰수집가 구간 제거)…", flush=True)
+        rec["prewarm_seconds"] = prewarm(a.keyspace)
+        pre = [get_json(f"http://{BPC_IP}:{p}/admin/stats") for p in nodes]
+        rec["prewarm_cache_sizes"] = [s["cacheSize"] for s in pre]
+        print(f"   프리웜 {rec['prewarm_seconds']}s → 캐시 상주 {rec['prewarm_cache_sizes']} "
+              f"(용량 {pre[0]['capacity']})", flush=True)
+
+        print("   Zipf 워밍업 (plateau 탐지 — LRU 가 핫셋 순서를 정리)…", flush=True)
+        rec["warmup"] = warmup_until_plateau(nodes, a.keyspace, a.skew, a.warmup_rps,
+                                             max_s=a.warmup_max)
         print(f"   워밍업 {rec['warmup']['seconds']}s, plateau={rec['warmup']['plateaued']}, "
               f"구간 히트율 {rec['warmup']['final_interval_hit_rate']}", flush=True)
 

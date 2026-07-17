@@ -58,6 +58,11 @@ services:
     # 파라미터여야 할 것이 측정 대상으로 변한다.
     cpus: ${ORIGIN_CPUS:?origin CPU 미설정 — scripts/run_arm.py 로 실행하세요}
     mem_limit: ${ORIGIN_MEM:?origin 메모리 미설정 — scripts/run_arm.py 로 실행하세요}
+    ports:
+      # 러너가 /admin/stats 를 긁는다. origin 요청 수 = 시스템 전체 미스 수이고,
+      # 앱들의 miss 합과 일치해야 하는 **교차 검증의 한쪽**이다.
+      # 실험 트래픽은 이 포트로 안 간다 — 앱은 도커 네트워크로 origin:9090 에 닿는다.
+      - "9090:9090"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/admin/stats"]
       interval: 2s

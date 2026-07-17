@@ -2,6 +2,7 @@ package dev.jun.cachesplit.app.web
 
 import dev.jun.cachesplit.app.cache.LruCache
 import dev.jun.cachesplit.app.config.AppProperties
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 class AdminController(
     private val cache: LruCache,
     private val props: AppProperties,
+    @Value("\${server.tomcat.threads.max}") private val maxThreads: Int,
 ) {
 
     /** 히트율 — 주 지표. 워밍업 plateau 탐지에도 이 엔드포인트를 폴링한다. */
@@ -26,6 +28,9 @@ class AdminController(
             hits = s.hits, misses = s.misses, hitRate = s.hitRate,
             cacheSize = s.size, capacity = s.capacity,
             threadsActive = Thread.activeCount(),
+            inFlight = KeyController.inFlight.get(),
+            inFlightMax = KeyController.inFlightMax.get(),
+            threadsMax = maxThreads,
             nodeId = props.nodeId,
         )
     }
@@ -44,6 +49,7 @@ class AdminController(
     @PostMapping("/reset-counters")
     fun resetCounters(): ResetResponse {
         cache.resetCounters()
+        KeyController.inFlightMax.set(0)
         return ResetResponse(cleared = 0, nodeId = props.nodeId)
     }
 
@@ -55,8 +61,14 @@ class AdminController(
 data class StatsResponse(
     val hits: Long, val misses: Long, val hitRate: Double,
     val cacheSize: Int, val capacity: Int,
-    /** 스레드가 묶이는지 CPU 가 묶는지 판정용 (Phase 0 — DECISIONS.md §17) */
+    /** JVM 전체 스레드 — 참고용(GC·JIT·idle 포함이라 병목 판정엔 못 쓴다) */
     val threadsActive: Int,
+    /** 지금 처리 중인 요청 수 — 정확한 in-flight */
+    val inFlight: Int,
+    /** 리셋 이후 관측된 최대 in-flight. threadsMax 에 붙으면 스레드가 묶는 것이다 */
+    val inFlightMax: Int,
+    /** tomcat 워커 상한 (arm 간 총량 고정) */
+    val threadsMax: Int,
     val nodeId: String,
 )
 
