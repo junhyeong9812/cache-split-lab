@@ -89,17 +89,39 @@ BPC  192.168.55.164  SUT (nginx + 앱 인스턴스 + origin)
 
 ```
 app/                단일 앱 소스 — 3 arm 이 같은 이미지를 쓴다
-nginx/              arm 별 라우팅 설정 (A 포함 — 홉 상수화)
-origin/             백킹 스토어. 캐시 미스 페널티의 출처
+  src/…/web/TestApiController.kt    /key/{id} · /admin/stats · /admin/cache/keys
+origin/             백킹 스토어. CSV 인메모리 + 고정 지연
+nginx/
+  nginx.conf        공통 — 세 arm 이 그대로 공유
+  upstream/
+    arm-a.conf      노드 1개
+    arm-b.conf      노드 2개 라운드로빈
+    arm-c.conf      노드 2개 hash $uri     ← arm 간 유일한 차이
 arms/
-  a-single/         1 노드 × 캐시 N
-  b-roundrobin/     2 노드 × 캐시 N/2 + RR
-  c-keyhash/        2 노드 × 캐시 N/2 + hash
+  compose.yml       하나. 세 arm 이 공유한다
+  a-single/arm.env      ARM_UPSTREAM_CONF=arm-a.conf, 노드 1개
+  b-roundrobin/arm.env  ARM_UPSTREAM_CONF=arm-b.conf, 노드 2개
+  c-keyhash/arm.env     ARM_UPSTREAM_CONF=arm-c.conf, 노드 2개
+data/               생성된 데이터셋 (CSV — 추적 안 함)
 k6/                 부하 시나리오 (APC 에서 실행)
 scripts/            스윕 러너 · 배포
 results/            실험 산출물 (추적 안 함 — 재생성 가능)
-docs/               설계 문서 (우선 추적 안 함)
+docs/               ARCHITECTURE.md · GLOSSARY.md
 ```
+
+**arm 폴더에 코드가 없는 게 핵심이다.** compose 도 앱도 하나뿐이고, arm 이 바뀌면
+`arm.env` 가 바뀔 뿐이다 — 파일이 하나면 구조적으로 갈라질 수가 없다.
+"셋은 설정만 다르다"가 이 프로젝트의 명제이자 폴더 구조다.
+
+### 실행
+
+```bash
+./gradlew build                          # jar 를 먼저 만든다 (셋이 같은 jar 를 쓴다)
+scripts/run-arm.sh a-single              # ← 미구현. 총량에서 노드당 값을 계산해 주입한다
+```
+
+compose 를 직접 부르면 `:?` 가드에 걸려 즉시 실패한다. 의도적이다 —
+빠뜨린 캐시 크기가 기본값으로 조용히 채워지면 실험이 통째로 거짓말이 된다.
 
 ## 상태
 
