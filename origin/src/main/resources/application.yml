@@ -1,0 +1,11 @@
+server:
+  port: 9090
+
+spring:
+  application:
+    name: cache-split-origin
+
+# ── 아직 미정 (docs/ARCHITECTURE.md §7 결정 로그) ────────────────────────
+# origin:
+#   csv-path:     ${CSV_PATH:/data/dataset.csv}   # 메모리에 통째로 적재
+#   delay-millis: ${DELAY_MS:0}                   # 미스 페널티 — 파라미터지 측정 대상이 아님

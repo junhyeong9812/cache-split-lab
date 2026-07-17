@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cache-split-app
+
+# ── 아직 미정 (docs/ARCHITECTURE.md §7 결정 로그) ────────────────────────
+# 아래 값들은 구현 단계에서 @ConfigurationProperties 로 바인딩된다.
+# 지금은 "무엇이 arm 별 변수인지"를 남겨두는 용도다.
+#
+# app:
+#   node-id:  ${NODE_ID:node-1}            # 어느 노드가 응답했나
+#   cache:
+#     capacity: ${CACHE_CAPACITY:0}        # ← arm 별 변수. A: N / B,C: N/2
+#   origin:
+#     base-url: ${ORIGIN_URL:http://origin:9090}
