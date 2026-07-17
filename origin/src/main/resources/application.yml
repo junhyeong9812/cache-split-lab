@@ -1,11 +1,21 @@
 server:
   port: 9090
+  tomcat:
+    threads:
+      # origin 은 측정 대상이 아니다. 넉넉히 줘서 origin 자신이 병목이 되지 않게 한다 —
+      # origin 이 밀리면 미스 페널티가 "우리가 정한 값"이 아니게 되고,
+      # 그 순간 파라미터여야 할 것이 측정 대상으로 변한다.
+      max: ${THREADS_MAX:400}
 
 spring:
   application:
     name: cache-split-origin
 
-# ── 아직 미정 (docs/ARCHITECTURE.md §7 결정 로그) ────────────────────────
-# origin:
-#   csv-path:     ${CSV_PATH:/data/dataset.csv}   # 메모리에 통째로 적재
-#   delay-millis: ${DELAY_MS:0}                   # 미스 페널티 — 파라미터지 측정 대상이 아님
+origin:
+  csv-path: ${CSV_PATH:/data/dataset.csv}
+  delay-millis: ${DELAY_MS}
+
+logging:
+  level:
+    root: WARN
+    dev.jun.cachesplit: INFO

@@ -12,7 +12,7 @@
 #   불변식이 조용히 깨진다. 조용히 깨진 불변식은 조용히 틀린 숫자를 만든다.
 #   파일이 하나면 구조적으로 갈라질 수가 없다.
 #
-# 실행: scripts/run-arm.sh 가 총량에서 노드당 값을 계산해 주입한다.
+# 실행: scripts/run_arm.py 가 총량에서 노드당 값을 계산해 주입한다.
 #       (CACHE_TOTAL → A: N / B,C: N/2,  CPU_TOTAL → A: 전부 / B,C: 절반)
 #       compose 를 직접 부르면 아래 :? 가드에 걸려 즉시 실패한다 — 의도적이다.
 #       빠뜨린 캐시 크기가 기본값으로 조용히 채워지면 실험이 통째로 거짓말이 된다.
@@ -25,14 +25,15 @@ x-app: &app
   build:
     context: ../app
   environment: &app-env
-    CACHE_CAPACITY: ${APP_CACHE_CAPACITY:?노드당 캐시 엔트리 수 미설정 — scripts/run-arm.sh 로 실행하세요}
+    CACHE_CAPACITY: ${APP_CACHE_CAPACITY:?노드당 캐시 엔트리 수 미설정 — scripts/run_arm.py 로 실행하세요}
+    THREADS_MAX: ${THREADS_MAX:?노드당 스레드 미설정 — scripts/run_arm.py 로 실행하세요}
     ORIGIN_URL: http://origin:9090
   # 총 자원 고정: A 는 1 노드가 CPU_TOTAL 을, B/C 는 2 노드가 절반씩 나눠 갖는다.
   # 이래야 "같은 자원을 어떻게 배치하느냐"만 변수로 남는다.
-  cpus: ${APP_CPUS:?노드당 CPU 미설정 — scripts/run-arm.sh 로 실행하세요}
+  cpus: ${APP_CPUS:?노드당 CPU 미설정 — scripts/run_arm.py 로 실행하세요}
   # 캐시는 엔트리 개수로 강제되므로(ARCHITECTURE §3) 이 리밋은 메커니즘이 아니라
   # 안전망이다. 여기 걸리면 그건 결과가 아니라 버그다.
-  mem_limit: ${APP_MEM:?노드당 메모리 미설정 — scripts/run-arm.sh 로 실행하세요}
+  mem_limit: ${APP_MEM:?노드당 메모리 미설정 — scripts/run_arm.py 로 실행하세요}
   depends_on:
     origin:
       condition: service_healthy
@@ -47,15 +48,16 @@ services:
     build:
       context: ../origin
     environment:
-      DELAY_MS: ${ORIGIN_DELAY_MS:?미스 페널티 미설정 — scripts/run-arm.sh 로 실행하세요}
-      CSV_PATH: /data/dataset.csv
+      DELAY_MS: ${ORIGIN_DELAY_MS:?미스 페널티 미설정 — scripts/run_arm.py 로 실행하세요}
+      # 키 공간 N 은 데이터셋 파일이 정한다. 캐시는 고정이고 이게 스윕 축이다.
+      CSV_PATH: /data/dataset-${DATASET:?키 공간(N) 미설정 — scripts/run_arm.py 로 실행하세요}.csv
     volumes:
       - ../data:/data:ro
     # origin 은 측정 대상이 아니다. 넉넉히 줘서 origin 자신이 병목이 되지 않게 한다 —
     # origin 이 밀리면 미스 페널티가 "우리가 정한 값"이 아니게 되고, 그 순간
     # 파라미터여야 할 것이 측정 대상으로 변한다.
-    cpus: ${ORIGIN_CPUS:?origin CPU 미설정 — scripts/run-arm.sh 로 실행하세요}
-    mem_limit: ${ORIGIN_MEM:?origin 메모리 미설정 — scripts/run-arm.sh 로 실행하세요}
+    cpus: ${ORIGIN_CPUS:?origin CPU 미설정 — scripts/run_arm.py 로 실행하세요}
+    mem_limit: ${ORIGIN_MEM:?origin 메모리 미설정 — scripts/run_arm.py 로 실행하세요}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/admin/stats"]
       interval: 2s
@@ -89,7 +91,6 @@ services:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       # ★ arm 간 유일한 차이. 이 한 줄이 이 프로젝트의 실험 변수 전부다.
       - ../nginx/upstream/${ARM_UPSTREAM_CONF:?upstream 설정 미지정}:/etc/nginx/conf.d/upstream.conf:ro
-      - ../results/${ARM_ID}/nginx:/var/log/nginx
     ports:
       - "80:80"
     depends_on:

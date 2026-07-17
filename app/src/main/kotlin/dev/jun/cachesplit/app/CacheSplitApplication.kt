@@ -1,6 +1,7 @@
 package dev.jun.cachesplit.app
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
 
 /**
@@ -16,6 +17,7 @@ import org.springframework.boot.runApplication
  * 실험 전체가 무효가 된다.
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 class CacheSplitApplication
 
 fun main(args: Array<String>) {

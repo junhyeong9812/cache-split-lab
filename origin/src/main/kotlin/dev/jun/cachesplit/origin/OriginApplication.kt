@@ -1,6 +1,7 @@
 package dev.jun.cachesplit.origin
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
 
 /**
@@ -20,6 +21,7 @@ import org.springframework.boot.runApplication
  * 순수하게 미스 **횟수** 차이로만 남는다.
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 class OriginApplication
 
 fun main(args: Array<String>) {

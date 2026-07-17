@@ -1,17 +1,26 @@
 server:
   port: 8080
+  tomcat:
+    threads:
+      # ★ arm 간 총 스레드 고정 (DECISIONS.md §17)
+      # A 는 1노드가 THREADS_TOTAL, B/C 는 2노드가 절반씩 → 총 동시성 상수.
+      # CPU 리밋만으로는 부족하다 — origin 에서 블로킹하는 스레드는 CPU 를 안 쓴다.
+      # Phase 0 에서 뭐가 묶이는지(CPU/스레드) 재고 최종 확정한다.
+      max: ${THREADS_MAX:200}
 
 spring:
   application:
     name: cache-split-app
 
-# ── 아직 미정 (docs/ARCHITECTURE.md §7 결정 로그) ────────────────────────
-# 아래 값들은 구현 단계에서 @ConfigurationProperties 로 바인딩된다.
-# 지금은 "무엇이 arm 별 변수인지"를 남겨두는 용도다.
-#
-# app:
-#   node-id:  ${NODE_ID:node-1}            # 어느 노드가 응답했나
-#   cache:
-#     capacity: ${CACHE_CAPACITY:0}        # ← arm 별 변수. A: N / B,C: N/2
-#   origin:
-#     base-url: ${ORIGIN_URL:http://origin:9090}
+app:
+  node-id: ${NODE_ID:node-1}
+  cache:
+    # ★ arm 을 가르는 유일한 앱 파라미터. 기본값 없음 — 미설정 시 기동 실패가 의도다.
+    capacity: ${CACHE_CAPACITY}
+  origin:
+    base-url: ${ORIGIN_URL:http://origin:9090}
+
+logging:
+  level:
+    root: WARN
+    dev.jun.cachesplit: INFO
