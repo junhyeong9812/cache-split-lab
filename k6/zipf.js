@@ -31,33 +31,35 @@ export function rng(seed) {
  *
  * s = 0 은 CDF 가 필요 없다(균등) — 특수 처리해서 80,000번 계산을 통째로 건너뛴다.
  */
-export function zipfSampler(n, s, seed) {
-  const rand = rng(seed);
-
-  if (s === 0) {
-    // 균등 — 모든 키가 똑같이 뽑힌다.
-    return () => Math.floor(rand() * n);
-  }
-
-  // cdf[i] = (1/1^s + ... + 1/(i+1)^s) / H(n,s)
-  const cdf = new Float64Array(n);
+export function buildCdf(n, s) {
+  // cdf[i] = (1/1^s + ... + 1/(i+1)^s) / H(n,s).  균등(s=0)이면 null 반환(CDF 불필요).
+  if (s === 0) return null;
+  const cdf = new Array(n);
   let acc = 0;
-  for (let i = 0; i < n; i++) {
-    acc += 1 / Math.pow(i + 1, s);
-    cdf[i] = acc;
-  }
-  for (let i = 0; i < n; i++) cdf[i] /= acc;   // 정규화 (acc = H(n,s))
+  for (let i = 0; i < n; i++) { acc += 1 / Math.pow(i + 1, s); cdf[i] = acc; }
+  for (let i = 0; i < n; i++) cdf[i] /= acc;
+  return cdf;
+}
 
+// ⚠️ 이 함수를 VU 안에서 직접 부르면 CDF 를 VU 마다 새로 만든다.
+//    N=40,000·VU 수천이면 부하 생성기가 수 GB 를 먹고 먼저 죽는다(2026-07-18 실측:
+//    BPC CPU 1.6% 인데 APC 가 3,884 VU 로 드롭 86만·에러 13%·p95 1.79s).
+//    반드시 buildCdf() 를 SharedArray 로 감싸 VU 간 1회만 구축하고, 그 배열을
+//    samplerFromCdf() 에 넘겨라 (load.js·probe.js 참조).
+export function samplerFromCdf(cdf, n, seed) {
+  const rand = rng(seed);
+  if (cdf === null) return () => Math.floor(rand() * n);   // 균등
   return () => {
     const u = rand();
-    // 이분탐색: cdf[lo] >= u 인 최소 lo
     let lo = 0, hi = n - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (cdf[mid] < u) lo = mid + 1; else hi = mid;
-    }
-    return lo;   // 0 = 가장 뜨거운 키
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (cdf[mid] < u) lo = mid + 1; else hi = mid; }
+    return lo;
   };
+}
+
+// 하위호환 — 단발성 스크립트(verify-zipf 등)용. 부하 스크립트에서는 쓰지 마라.
+export function zipfSampler(n, s, seed) {
+  return samplerFromCdf(buildCdf(n, s), n, seed);
 }
 
 /**

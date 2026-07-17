@@ -4,7 +4,8 @@
 // "이 RPS 에서 p99 가 얼마" 를 말할 수 있다. 연속 램프는 매 순간이 과도상태다.
 import http from 'k6/http';
 import { Rate, Trend } from 'k6/metrics';
-import { zipfSampler, keyName } from './zipf.js';
+import { SharedArray } from 'k6/data';
+import { buildCdf, samplerFromCdf, keyName } from './zipf.js';
 
 const TARGET = __ENV.TARGET || 'http://192.168.55.164';
 const N      = parseInt(__ENV.KEYSPACE);
@@ -30,7 +31,8 @@ STEPS.forEach((rps, i) => {
 
 export const options = { scenarios, discardResponseBodies: false };
 
-const sampler = zipfSampler(N, SKEW, 42 + __VU);
+const CDF = new SharedArray('cdf', () => [buildCdf(N, SKEW)]);
+const sampler = samplerFromCdf(CDF[0], N, 42 + __VU);
 
 export default function () {
   const res = http.get(`${TARGET}/key/${keyName(sampler())}`, { tags: { name: 'key' } });

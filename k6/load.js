@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 import http from 'k6/http';
 import { Counter, Rate } from 'k6/metrics';
-import { zipfSampler, keyName } from './zipf.js';
+import { SharedArray } from 'k6/data';
+import { buildCdf, samplerFromCdf, keyName } from './zipf.js';
 
 const TARGET   = __ENV.TARGET   || 'http://192.168.55.164';
 const N        = parseInt(__ENV.KEYSPACE);        // 키 공간 (데이터셋 행 수)
@@ -44,12 +45,10 @@ export const options = {
   discardResponseBodies: false,   // cached 플래그를 읽어야 한다
 };
 
+// ★ CDF 를 SharedArray 로 VU 간 1회만 구축한다. VU 마다 만들면 부하 생성기가 죽는다.
+const CDF = new SharedArray('cdf', () => [buildCdf(N, SKEW)]);
 // VU 마다 자기 시드 → 재현 가능. 전체 합은 Zipf.
-//
-// ⚠️ 동시 VU 라서 **요청 순서의 완전한 재현은 불가능**하다(인터리빙이 비결정적).
-//    arm 간에 보장되는 것은 "통계적으로 동일한 스트림"이지 "동일한 시퀀스"가 아니다.
-//    정상상태 히트율은 분포의 함수라 이 정도로 충분하지만, 불변식이 약해진 것은 사실이다.
-const sampler = zipfSampler(N, SKEW, SEED + __VU);
+const sampler = samplerFromCdf(CDF[0], N, SEED + __VU);
 
 export default function () {
   const key = keyName(sampler());
