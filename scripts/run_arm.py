@@ -96,12 +96,35 @@ def wait_healthy(nodes, timeout=120):
     raise RuntimeError("헬스체크 타임아웃")
 
 
+K6_WARMUP_NAME = "k6-warmup"
+
+
+def kill_k6(name=K6_WARMUP_NAME):
+    """★ 원격 k6 를 **이름으로 직접 죽인다.**
+
+    왜 이게 필요한가 (2026-07-17 발견한 결함):
+      Popen(ssh ...).terminate() 는 **로컬 ssh 클라이언트만 죽인다.**
+      원격의 `docker run` 은 SSH 연결이 끊겨도 계속 돈다 — TTY 가 없으면
+      SIGHUP 이 전파되지 않기 때문이다.
+
+      그래서 Phase 1 에서는 plateau 도달 후 terminate 했는데도 워밍업 k6(3,000 RPS)가
+      **측정 내내 계속 돌았다.** 실제 부하가 500 이 아니라 ~3,500 이었다.
+
+      히트율은 RPS 에 무관하므로 Phase 1 결과 자체는 무사했지만(이론과 0.28%p 이내로
+      일치한 게 그 증거), **RPS 가 독립변수인 Phase 4 라면 통째로 망했을 것이다.**
+      그리고 조용히 망했을 것이다 — 숫자는 여전히 그럴듯하게 나왔을 테니까.
+    """
+    sh(f"ssh {APC} 'docker kill {name} 2>/dev/null || true'", check=False)
+
+
 def k6(keyspace, skew, rps, duration, seed=42, background=False):
-    cmd = (f"ssh {APC} 'docker run --rm -v ~/{REMOTE}-k6:/s "
+    name = f"--name {K6_WARMUP_NAME}" if background else ""
+    cmd = (f"ssh {APC} 'docker run --rm {name} -v ~/{REMOTE}-k6:/s "
            f"-e TARGET=http://{BPC_IP} -e KEYSPACE={keyspace} -e SKEW={skew} "
            f"-e RPS={rps} -e DURATION={duration} -e SEED={seed} "
            f"grafana/k6:latest run --summary-export=/dev/stdout --quiet /s/load.js'")
     if background:
+        kill_k6()   # 이전 런의 잔재가 남아있을 수 있다
         return subprocess.Popen(cmd, shell=True, text=True,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return sh(cmd, check=False)
@@ -165,10 +188,16 @@ def warmup_until_plateau(nodes, keyspace, skew, rps, max_s=420, window=10, tol=0
                 "final_interval_hit_rate": round(prev or 0, 5), "curve": curve,
                 "warning": "plateau 미도달 — 이 런의 히트율은 정상상태가 아닐 수 있다"}
     finally:
+        # 로컬 ssh 를 죽이는 것만으로는 부족하다 — 원격 컨테이너를 이름으로 죽인다.
+        kill_k6()
         proc.terminate()
         try: proc.wait(10)
         except Exception: proc.kill()
-        time.sleep(2)
+        time.sleep(3)                      # 잔여 in-flight 배수
+        # 정말 죽었는지 확인한다. 여기서 조용히 실패하면 측정이 오염된다.
+        left = sh(f"ssh {APC} 'docker ps --filter name={K6_WARMUP_NAME} -q | wc -l'", check=False)
+        if left.strip() not in ("0", ""):
+            raise RuntimeError(f"워밍업 k6 가 안 죽었다 — 측정 오염됨 (남은 컨테이너 {left})")
 
 
 def collect(arm, nodes):
