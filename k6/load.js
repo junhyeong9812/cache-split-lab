@@ -45,10 +45,11 @@ export const options = {
   discardResponseBodies: false,   // cached 플래그를 읽어야 한다
 };
 
-// ★ CDF 를 SharedArray 로 VU 간 1회만 구축한다. VU 마다 만들면 부하 생성기가 죽는다.
-const CDF = new SharedArray('cdf', () => [buildCdf(N, SKEW)]);
+// ★ CDF 는 원소 40k 개짜리 SharedArray — 원소 1개로 감싸면 VU 마다 전체가
+//   복사돼 부하 생성기가 죽는다 (zipf.js 경고·TIMELINE.md 문제 ⑥).
+const CDF = new SharedArray('cdf', () => buildCdf(N, SKEW) || []);
 // VU 마다 자기 시드 → 재현 가능. 전체 합은 Zipf.
-const sampler = samplerFromCdf(CDF[0], N, SEED + __VU);
+const sampler = samplerFromCdf(SKEW === 0 ? null : CDF, N, SEED + __VU);
 
 export default function () {
   const key = keyName(sampler());

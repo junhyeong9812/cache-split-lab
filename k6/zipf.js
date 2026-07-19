@@ -41,14 +41,25 @@ export function buildCdf(n, s) {
   return cdf;
 }
 
-// ⚠️ 이 함수를 VU 안에서 직접 부르면 CDF 를 VU 마다 새로 만든다.
-//    N=40,000·VU 수천이면 부하 생성기가 수 GB 를 먹고 먼저 죽는다(2026-07-18 실측:
-//    BPC CPU 1.6% 인데 APC 가 3,884 VU 로 드롭 86만·에러 13%·p95 1.79s).
-//    반드시 buildCdf() 를 SharedArray 로 감싸 VU 간 1회만 구축하고, 그 배열을
-//    samplerFromCdf() 에 넘겨라 (load.js·probe.js 참조).
+// ⚠️ CDF 를 VU 마다 갖게 하면 부하 생성기가 먼저 죽는다. 두 번 데였다:
+//    ① buildCdf() 를 VU 안에서 직접 호출 — VU 마다 새로 계산 (2026-07-18:
+//       3,884 VU 에서 드롭 86만·에러 13%·p95 1.79s).
+//    ② `new SharedArray('cdf', () => [buildCdf(...)])` 처럼 **전체 배열을 원소
+//       1개로 감싸기** — SharedArray 는 "원소 접근 시 그 원소를 복사"하므로
+//       CDF[0] 을 읽는 순간 VU 마다 40k 배열 전체 사본(~5MB)이 생긴다. VU 1,250
+//       개 × 5MB = 6GB (2026-07-19 실측: 컨테이너 OOM kill. 전날 APC 호스트
+//       동결도 같은 원인 — TIMELINE.md 문제 ⑥).
+//    올바른 패턴: **원소 40k 개 그대로** 담아 접근당 스칼라 하나만 복사되게 한다.
+//        const CDF = new SharedArray('cdf', () => buildCdf(N, SKEW) || []);
+//        const sampler = samplerFromCdf(SKEW === 0 ? null : CDF, N, seed);
+//    (s=0 은 buildCdf 가 null → 빈 배열로 채우고 null 을 넘긴다. 이분탐색은
+//    요청당 ~17회 스칼라 접근 — SharedArray 역직렬화 비용은 무시 가능.)
 export function samplerFromCdf(cdf, n, seed) {
   const rand = rng(seed);
   if (cdf === null) return () => Math.floor(rand() * n);   // 균등
+  // 빈 SharedArray(s=0 용)가 cdf 로 잘못 들어오면 이분탐색이 조용히 전부
+  // 인덱스 0 으로 수렴한다 — 에러 없이 그럴듯한 숫자가 나오는 최악 모드. 즉시 죽인다.
+  if (cdf.length !== n) throw new Error(`CDF 길이 ${cdf.length} ≠ N ${n} — s=0 은 null 을 넘겨라`);
   return () => {
     const u = rand();
     let lo = 0, hi = n - 1;

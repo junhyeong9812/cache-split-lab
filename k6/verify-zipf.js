@@ -2,7 +2,15 @@
 // 실행: k6 run --vus 1 --iterations 1 k6/verify-zipf.js
 //
 // "Zipf 아닌 Zipf 생성기"는 겉으로 구분이 안 된다. 그럴듯하고 틀린 히트율을 만든다.
-import { zipfSampler, rng } from './zipf.js';
+import { zipfSampler, buildCdf, samplerFromCdf, rng } from './zipf.js';
+import { SharedArray } from 'k6/data';
+
+// 부하 스크립트(load.js·probe.js)가 실제로 쓰는 SharedArray 경로.
+// 원소 40k 개 SharedArray 는 접근당 스칼라만 복사한다(TIMELINE.md 문제 ⑥) —
+// 이 검정은 그 경로가 일반 배열과 **동일한 시퀀스**를 내는지 본다
+// (JSON 왕복으로 float 가 흔들리면 이분탐색 결과가 달라질 수 있다).
+const SHARED_N = 1000, SHARED_S = 1.5;
+const SHARED_CDF = new SharedArray('verify-cdf', () => buildCdf(SHARED_N, SHARED_S) || []);
 
 // 이론값: 상위 k 개가 먹는 트래픽 몫 = H(k,s) / H(n,s)
 function theoryTopShare(n, s, k) {
@@ -39,6 +47,14 @@ export default function () {
   for (let i = 0; i < 10000; i++) { const x = a(); if (x !== b()) same = false; if (x !== c()) diff = true; }
   console.log(`\n  같은 시드 → 같은 시퀀스 : ${same ? 'PASS' : 'FAIL'}`);
   console.log(`  다른 시드 → 다른 시퀀스 : ${diff ? 'PASS' : 'FAIL'}`);
+
+  // SharedArray 경로 ≡ 일반 배열 경로 (같은 시드 → 같은 시퀀스)
+  const plain  = samplerFromCdf(buildCdf(SHARED_N, SHARED_S), SHARED_N, 11);
+  const shared = samplerFromCdf(SHARED_CDF, SHARED_N, 11);
+  let sharedSame = true;
+  for (let i = 0; i < 100000; i++) if (plain() !== shared()) { sharedSame = false; break; }
+  console.log(`  SharedArray ≡ 일반 배열 : ${sharedSame ? 'PASS' : 'FAIL'}`);
+  if (!sharedSame) allPass = false;
 
   // 균등(s=0) 이 정말 균등한가 — 카이제곱 대신 최대 편차로 간단 검정
   const u = zipfSampler(100, 0, 3); const bins = new Array(100).fill(0);

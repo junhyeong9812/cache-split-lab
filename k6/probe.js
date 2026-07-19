@@ -16,13 +16,21 @@ const STEP_S = parseInt(__ENV.STEP_SECONDS || '20');
 const cacheHit = new Rate('cache_hit');
 
 // 단계마다 별도 시나리오 → k6 요약이 단계별로 분리돼 나온다
+//
+// ⚠️ preAllocatedVUs 는 **시나리오 수만큼 곱해져 초기화 단계에서 전부** 만들어진다.
+//    계단 5개 × 3,000 = 15,000 VU 가 부하 생성기 램을 넘겨 호스트를 얼렸다
+//    (2026-07-18, TIMELINE.md 문제 ⑥). VU 수요 = rate × 지연이므로 지연 20ms
+//    가정이면 rps/50 이면 충분하고, 포화로 지연이 튀면 maxVUs 까지 늘다가
+//    dropped_iterations 로 드러난다 — 그게 바로 우리가 찾는 신호다.
+//    포화 측정의 기본 경로는 이 파일이 아니라 **k6 런 분리**다
+//    (docs/phases/phase-0-saturation/spec.md §3.1 — load.js 를 RPS 만 바꿔 순차 실행).
 const scenarios = {};
 STEPS.forEach((rps, i) => {
   scenarios[`s${rps}`] = {
     executor: 'constant-arrival-rate',
     rate: rps, timeUnit: '1s', duration: `${STEP_S}s`,
-    preAllocatedVUs: Math.min(3000, Math.max(100, rps)),
-    maxVUs: 6000,
+    preAllocatedVUs: Math.min(500, Math.max(50, Math.ceil(rps / 50))),
+    maxVUs: 1500,
     startTime: `${i * (STEP_S + 5)}s`,     // 단계 사이 5초 배수
     tags: { step: String(rps) },
     gracefulStop: '3s',
@@ -31,8 +39,8 @@ STEPS.forEach((rps, i) => {
 
 export const options = { scenarios, discardResponseBodies: false };
 
-const CDF = new SharedArray('cdf', () => [buildCdf(N, SKEW)]);
-const sampler = samplerFromCdf(CDF[0], N, 42 + __VU);
+const CDF = new SharedArray('cdf', () => buildCdf(N, SKEW) || []);
+const sampler = samplerFromCdf(SKEW === 0 ? null : CDF, N, 42 + __VU);
 
 export default function () {
   const res = http.get(`${TARGET}/key/${keyName(sampler())}`, { tags: { name: 'key' } });
