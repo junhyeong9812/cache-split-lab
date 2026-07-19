@@ -17,7 +17,14 @@ data class AppProperties(
     val nodeId: String,
     val cache: Cache,
     val origin: Origin,
+    /** arm D 전용 — mode=redis 일 때만 읽힌다. 기본값이 있어 A/B/C 는 영향 없음. */
+    val redis: Redis = Redis(),
 ) {
-    data class Cache(val capacity: Int)
+    /**
+     * mode: local(인메모리 — arm A/B/C, 기본) | redis(공유 — arm D).
+     * capacity 는 local 이면 노드당, redis 면 **총량**(캐시가 하나) — 계산은 러너 소유.
+     */
+    data class Cache(val capacity: Int, val mode: String = "local")
     data class Origin(val baseUrl: String)
+    data class Redis(val uri: String = "redis://redis:6379")
 }

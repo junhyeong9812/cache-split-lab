@@ -28,6 +28,9 @@ x-app: &app
     CACHE_CAPACITY: ${APP_CACHE_CAPACITY:?노드당 캐시 엔트리 수 미설정 — scripts/run_arm.py 로 실행하세요}
     THREADS_MAX: ${THREADS_MAX:?노드당 스레드 미설정 — scripts/run_arm.py 로 실행하세요}
     ORIGIN_URL: http://origin:9090
+    # arm D 만 redis — 나머지 arm 은 기본값 local 이라 이 두 줄이 무시된다.
+    CACHE_MODE: ${APP_CACHE_MODE:-local}
+    REDIS_URI: redis://redis:6379
   # 총 자원 고정: A 는 1 노드가 CPU_TOTAL 을, B/C 는 2 노드가 절반씩 나눠 갖는다.
   # 이래야 "같은 자원을 어떻게 배치하느냐"만 변수로 남는다.
   cpus: ${APP_CPUS:?노드당 CPU 미설정 — scripts/run_arm.py 로 실행하세요}
@@ -37,6 +40,10 @@ x-app: &app
   depends_on:
     origin:
       condition: service_healthy
+    # arm D 전용 — redis profile 이 꺼진 arm(A/B/C)에선 required: false 로 무시된다.
+    redis:
+      condition: service_healthy
+      required: false
   healthcheck:
     test: ["CMD", "wget", "-qO-", "http://localhost:8080/admin/stats"]
     interval: 2s
@@ -88,6 +95,25 @@ services:
       - "8082:8080"
     # arm A 에는 이 노드가 없다. profile 이 없는 A 는 app-2 를 아예 안 띄운다.
     profiles: ["two-node"]
+
+  redis:
+    # arm D — 공유 캐시. 축출은 앱의 Lua(엔트리 수 정확 LRU)가 하므로
+    # maxmemory-policy 는 기본(noeviction)을 그대로 둔다 — Redis 근사 LRU 금지 (DECISIONS §10 연장).
+    # 영속화 전부 끔: 측정 중 fork/디스크 I/O 는 지연 노이즈다.
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # ★ 총 자원 고정의 일부다 — arm D 는 CPU_TOTAL 을 앱 2 + redis 1 이 나눠 갖는다.
+    cpus: ${REDIS_CPUS:-0.1}
+    mem_limit: ${REDIS_MEM:-256m}
+    ports:
+      # 검증·모니터링용 (Lua LRU 시나리오 검증 — 실험 트래픽은 도커 네트워크로만).
+      - "6379:6379"
+    profiles: ["redis"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   nginx:
     image: nginx:1.27-alpine

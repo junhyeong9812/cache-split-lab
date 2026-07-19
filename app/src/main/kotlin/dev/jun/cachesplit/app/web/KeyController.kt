@@ -1,6 +1,6 @@
 package dev.jun.cachesplit.app.web
 
-import dev.jun.cachesplit.app.cache.LruCache
+import dev.jun.cachesplit.app.cache.KeyCache
 import dev.jun.cachesplit.app.config.AppProperties
 import dev.jun.cachesplit.app.origin.OriginClient
 import org.springframework.http.HttpStatus
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 @RestController
 class KeyController(
-    private val cache: LruCache,
+    private val cache: KeyCache,
     private val origin: OriginClient,
     private val props: AppProperties,
 ) {

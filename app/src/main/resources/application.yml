@@ -15,10 +15,15 @@ spring:
 app:
   node-id: ${NODE_ID:node-1}
   cache:
-    # ★ arm 을 가르는 유일한 앱 파라미터. 기본값 없음 — 미설정 시 기동 실패가 의도다.
+    # ★ arm 을 가르는 앱 파라미터. 기본값 없음 — 미설정 시 기동 실패가 의도다.
     capacity: ${CACHE_CAPACITY}
+    # local(인메모리 — A/B/C, 기본) | redis(공유 — arm D). 오타는 기동 실패.
+    mode: ${CACHE_MODE:local}
   origin:
     base-url: ${ORIGIN_URL:http://origin:9090}
+  redis:
+    # arm D 전용 — mode=redis 일 때만 접속한다.
+    uri: ${REDIS_URI:redis://redis:6379}
 
 logging:
   level:

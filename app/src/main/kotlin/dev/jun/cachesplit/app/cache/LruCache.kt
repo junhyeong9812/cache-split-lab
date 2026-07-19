@@ -24,7 +24,7 @@ import kotlin.concurrent.withLock
  * origin 호출은 이 락 **밖**에서 일어난다(호출부 참조) — 락을 쥔 채 5ms 를 기다리면
  * 캐시가 통째로 직렬화되어 측정 대상이 캐시가 아니라 락이 된다.
  */
-class LruCache(val capacity: Int) {
+class LruCache(override val capacity: Int) : KeyCache {
 
     init {
         require(capacity > 0) { "capacity 는 1 이상이어야 한다: $capacity" }
@@ -50,17 +50,17 @@ class LruCache(val capacity: Int) {
     private var misses = 0L
 
     /** 히트면 값, 미스면 null. 카운터는 여기서만 움직인다. */
-    fun get(key: String): Long? = lock.withLock {
+    override fun get(key: String): Long? = lock.withLock {
         val value = map[key]
         if (value != null) hits++ else misses++
         value
     }
 
-    fun put(key: String, value: Long) = lock.withLock {
+    override fun put(key: String, value: Long): Unit = lock.withLock {
         map[key] = value
     }
 
-    fun stats(): CacheStats = lock.withLock {
+    override fun stats(): CacheStats = lock.withLock {
         CacheStats(hits = hits, misses = misses, size = map.size, capacity = capacity)
     }
 
@@ -71,16 +71,16 @@ class LruCache(val capacity: Int) {
      * arm B 는 교집합이 크고(중복), arm C 는 0 이어야(분할) 한다.
      * 이게 없으면 히트율 숫자만 보고 "그런가보다" 하는 것이다.
      */
-    fun keys(): List<String> = lock.withLock { map.keys.toList() }
+    override fun keys(): List<String> = lock.withLock { map.keys.toList() }
 
     /** 워밍업 카운터를 버리고 측정 구간을 새로 시작할 때. */
-    fun resetCounters(): Unit = lock.withLock {
+    override fun resetCounters(): Unit = lock.withLock {
         hits = 0
         misses = 0
     }
 
     /** 캐시까지 통째로 비운다. 반환값은 비우기 전 엔트리 수. */
-    fun clear(): Int = lock.withLock {
+    override fun clear(): Int = lock.withLock {
         val n = map.size
         map.clear()
         hits = 0

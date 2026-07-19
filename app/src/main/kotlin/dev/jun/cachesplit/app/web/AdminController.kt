@@ -1,6 +1,6 @@
 package dev.jun.cachesplit.app.web
 
-import dev.jun.cachesplit.app.cache.LruCache
+import dev.jun.cachesplit.app.cache.KeyCache
 import dev.jun.cachesplit.app.config.AppProperties
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.GetMapping
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/admin")
 class AdminController(
-    private val cache: LruCache,
+    private val cache: KeyCache,
     private val props: AppProperties,
     @Value("\${server.tomcat.threads.max}") private val maxThreads: Int,
 ) {
